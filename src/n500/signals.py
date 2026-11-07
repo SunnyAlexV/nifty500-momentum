@@ -84,7 +84,9 @@ def adjusted_log_returns(raw: pd.DataFrame, actions: pd.DataFrame, cal: pd.Datet
     dm = a[a["kind"] == "demerger"][["key", "ex_date"]].drop_duplicates().assign(demerger=True)
     raw = raw.merge(sb.rename(columns={"ex_date": "date"}), on=["key", "date"], how="left")
     raw = raw.merge(dm.rename(columns={"ex_date": "date"}), on=["key", "date"], how="left")
-    raw["factor"] = raw["factor"].fillna(1.0)
+    raw["factor"] = pd.to_numeric(raw["factor"], errors="coerce").fillna(1.0).astype("float64")
+    for c in ("close", "prev_close", "turnover"):
+        raw[c] = pd.to_numeric(raw[c], errors="coerce").astype("float64")
     raw["demerger"] = raw["demerger"].astype("boolean").fillna(False).astype(bool)
     raw["l"] = np.log(raw["close"] / (raw["prev_close"] / raw["factor"]))
     big = raw["l"].abs() > np.log(1.35)
