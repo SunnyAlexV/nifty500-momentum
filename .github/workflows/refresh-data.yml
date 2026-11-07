@@ -1,0 +1,28 @@
+name: Refresh NSE data
+
+on:
+  schedule:
+    - cron: "37 15 * * 1-5"   # 21:07 IST, after NSE publishes the day's bhavcopy
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python scripts/refresh_data.py
+      - run: python -m pytest -q tests
+      - name: Commit new data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data/days data/cache
+          git diff --cached --quiet || git commit -m "data: refresh $(date -u +%F)"
+          git push

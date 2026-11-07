@@ -1,0 +1,7 @@
+duckdb>=1.1
+pandas>=2.1
+numpy
+pyarrow
+requests
+streamlit>=1.40
+pytest
