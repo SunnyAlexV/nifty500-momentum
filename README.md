@@ -37,6 +37,19 @@ All returns are log returns of split/bonus-adjusted prices.
 Z = (S − mean) / sd across eligible stocks. Eligible: ≥ 90% of the last 252 days priced,
 traded in the last 5 days, 6-month median daily traded value above the threshold (₹5 cr default).
 
+## My portfolio tab
+
+Turns the ranking into this month's orders. Inputs: total portfolio value, N, exit rank
+(default 60), weighting (inverse-volatility or equal), industry cap (default 35% of names),
+max weight per stock (default 10%) and current holdings (`SYMBOL QTY` per line).
+
+1. Keep holdings ranked ≤ exit rank; sell the rest (and anything no longer eligible).
+2. Fill empty slots from the top of the ranking, skipping full industries and stocks whose
+   single share costs more than their allocation.
+3. Weights wᵢ ∝ 1/σᵢ, capped at the max weight (excess redistributed pro rata).
+4. Whole shares: floor(value · wᵢ / priceᵢ); leftover cash is then spent one share at a time
+   on the name furthest below its target, never above the cap.
+
 ## Price adjustments (see the *Data checks* tab)
 
 1. Bonus a:b → factor (a+b)/b; split FV₁→FV₂ → factor FV₁/FV₂ (NSE corporate-actions feed).
@@ -53,6 +66,7 @@ src/n500/bhavcopy.py   NSE bhavcopy download + parse (legacy and UDiFF formats)
 src/n500/update.py     incremental price update
 src/n500/nse.py        Nifty 500 list, corporate actions, ratio parsing
 src/n500/signals.py    history linking, adjusted returns, scores, Z-scores
+src/n500/portfolio.py  selection, industry cap, inverse-vol weights, whole-share orders
 scripts/               one-off full-history download and ingest (2010 onwards)
 tests/                 pytest: data integrity + signal maths on synthetic data
 data/days/             last 300 trading days, one parquet per day (committed)

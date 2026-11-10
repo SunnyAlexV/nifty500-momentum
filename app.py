@@ -100,7 +100,76 @@ show["σ ann. %"] = 100 * df["sigma"]
 show["MDTV ₹cr"] = df["mdtv_cr"]
 show["Last close"] = df["last_close"]
 
-tab1, tab2, tab3, tab4 = st.tabs(["Ranking", "All signals", "Excluded", "Data checks"])
+tab1, tabP, tab2, tab3, tab4 = st.tabs(["Ranking", "My portfolio", "All signals", "Excluded", "Data checks"])
+
+with tabP:
+    from n500.portfolio import build, parse_holdings
+    st.caption(f"Uses the **{variant}** ranking above. Keeps holdings ranked ≤ the exit rank, sells the rest, "
+               "fills empty slots from the top while respecting the industry cap, then sizes in whole shares.")
+    a1, a2, a3 = st.columns(3)
+    value = a1.number_input("Total portfolio value (holdings + cash), ₹", 10_000, 100_000_000, 250_000, 5_000)
+    n_hold = a2.number_input("Number of stocks (N)", 5, 60, 20, 1)
+    exit_rank = a3.number_input("Sell when rank falls below", 10, 200, 60, 5)
+    b1, b2, b3 = st.columns(3)
+    weighting = b1.radio("Weighting", ["Inverse volatility", "Equal"], horizontal=True)
+    ind_cap = b2.slider("Industry cap (% of names)", 10, 100, 35, 5)
+    max_w = b3.slider("Max weight per stock (%)", 5, 30, 10, 1)
+    rebal = st.checkbox("Also top up / trim kept holdings to target weights", value=False,
+                        help="Off: kept stocks are left alone and only new buys are sized (fewer trades).")
+    htxt = st.text_area("Current holdings: one per line, SYMBOL QUANTITY (leave empty for a fresh start)",
+                        placeholder="LAURUSLABS 7\nCUPID 27", height=140)
+    holdings = parse_holdings(htxt)
+    out = build(elig.rename(columns={"industry": "industry"}), variant, holdings, value=float(value),
+                n=int(n_hold), exit_rank=int(exit_rank), industry_cap=ind_cap / 100,
+                max_weight=max_w / 100, weighting="equal" if weighting == "Equal" else "inverse_vol",
+                rebalance_kept=rebal, prices=excl["last_close"])
+    p, sells, cash = out["portfolio"], out["sells"], out["cash"]
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Sells", len(sells)); m2.metric("Buys", int((p["trade_qty"] > 0).sum()))
+    m3.metric("Cost of buys", f"₹{cash['buy_cost']:,.0f}")
+    m4.metric("Cash left after trades", f"₹{cash['cash_after']:,.0f}")
+    if cash["cash_after"] < 0:
+        st.error("Buys cost more than the cash available. Check the portfolio value, or tick top up / trim.")
+    if cash["unpriced"]:
+        st.warning("No current price for: " + ", ".join(cash["unpriced"]) + " (not in the eligible list); "
+                   "their value is not counted.")
+
+    st.subheader("Orders")
+    sell_orders = pd.DataFrame({"Action": "SELL", "Symbol": sells["symbol"], "Qty": -sells["trade_qty"],
+                                "Last close": sells["last_close"], "Value ₹": -sells["trade_value"],
+                                "Why": sells["reason"]})
+    t = p[p["trade_qty"] != 0]
+    buy_orders = pd.DataFrame({"Action": np.where(t["trade_qty"] > 0, "BUY", "SELL"), "Symbol": t.index,
+                               "Qty": t["trade_qty"].abs().values, "Last close": t["last_close"].values,
+                               "Value ₹": t["trade_value"].abs().values,
+                               "Why": np.where(t["status"] == "BUY", "new: rank " + t["rank"].astype(str),
+                                               "rebalance kept holding")})
+    orders = pd.concat([sell_orders, buy_orders], ignore_index=True)
+    if orders.empty:
+        st.info("No trades needed this month.")
+    else:
+        st.dataframe(orders, hide_index=True, use_container_width=True,
+                     column_config={"Last close": st.column_config.NumberColumn(format="₹%.2f"),
+                                    "Value ₹": st.column_config.NumberColumn(format="₹%.0f")})
+        st.download_button("Download orders CSV", orders.to_csv(index=False).encode(),
+                           f"orders_{asof:%Y%m%d}.csv", "text/csv")
+
+    st.subheader("Portfolio after trades")
+    port = pd.DataFrame({"Rank": p["rank"], "Symbol": p.index, "Status": p["status"], "Industry": p["industry"],
+                         "Z": p[variant], "σ ann. %": 100 * p["sigma"], "Target weight %": 100 * p["weight"],
+                         "Qty": p["new_qty"], "Value ₹": p["new_qty"] * p["last_close"]})
+    st.dataframe(port, hide_index=True, use_container_width=True,
+                 column_config={"Z": st.column_config.NumberColumn(format="%.2f"),
+                                "σ ann. %": st.column_config.NumberColumn(format="%.1f"),
+                                "Target weight %": st.column_config.NumberColumn(format="%.1f"),
+                                "Value ₹": st.column_config.NumberColumn(format="₹%.0f")})
+    ind = port.groupby("Industry").agg(names=("Symbol", "count"), value=("Value ₹", "sum"))
+    ind["% of invested"] = 100 * ind["value"] / ind["value"].sum()
+    st.caption(f"Industry exposure (cap: {out['max_per_industry']} names per industry)")
+    st.dataframe(ind.sort_values("value", ascending=False).round(1), use_container_width=True)
+    if len(out["skipped"]):
+        with st.expander(f"Skipped while filling ({len(out['skipped'])})"):
+            st.dataframe(out["skipped"], hide_index=True, use_container_width=True)
 with tab1:
     q = st.text_input("Filter symbol / company / industry", "")
     view = show
